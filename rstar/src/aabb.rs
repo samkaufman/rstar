@@ -90,7 +90,7 @@ where
     }
 
     /// Returns the squared distance to the AABB's [min_point](AABB::min_point)
-    pub fn distance_2(&self, point: &P) -> P::Scalar {
+    pub fn distance_2(&self, point: &P) -> P::ComposedScalar {
         if self.contains_point(point) {
             Zero::zero()
         } else {
@@ -141,18 +141,19 @@ where
             && self.upper.all_component_wise(&other.lower, |l, r| l >= r)
     }
 
-    fn area(&self) -> P::Scalar {
-        let zero = P::Scalar::zero();
-        let one = P::Scalar::one();
-        let diag = self.upper.sub(&self.lower);
-        diag.fold(one, |acc, cur| max_inline(cur, zero) * acc)
+    fn area(&self) -> P::ComposedScalar {
+        let zero = P::ComposedScalar::zero();
+        let one = P::ComposedScalar::one();
+        self.upper
+            .sub(&self.lower)
+            .fold(one, |acc, cur| max_inline(cur.into(), zero) * acc)
     }
 
-    fn distance_2(&self, point: &P) -> P::Scalar {
+    fn distance_2(&self, point: &P) -> P::ComposedScalar {
         self.distance_2(point)
     }
 
-    fn min_max_dist_2(&self, point: &P) -> <P as Point>::Scalar {
+    fn min_max_dist_2(&self, point: &P) -> <P as Point>::ComposedScalar {
         let l = self.lower.sub(point);
         let u = self.upper.sub(point);
         let mut max_diff = (Zero::zero(), Zero::zero(), 0); // diff, min, index
@@ -176,7 +177,7 @@ where
         }
 
         *result.nth_mut(max_diff.2) = max_diff.1;
-        result.fold(Zero::zero(), |acc, curr| acc + curr)
+        result.fold(Zero::zero(), |acc, curr| acc + curr.into())
     }
 
     fn center(&self) -> Self::Point {
@@ -185,7 +186,7 @@ where
         self.lower.component_wise(&self.upper, |x, y| (x + y) / two)
     }
 
-    fn intersection_area(&self, other: &Self) -> <Self::Point as Point>::Scalar {
+    fn intersection_area(&self, other: &Self) -> <Self::Point as Point>::ComposedScalar {
         AABB {
             lower: self.lower.max_point(&other.lower),
             upper: self.upper.min_point(&other.upper),
@@ -193,10 +194,14 @@ where
         .area()
     }
 
-    fn perimeter_value(&self) -> P::Scalar {
-        let diag = self.upper.sub(&self.lower);
-        let zero = P::Scalar::zero();
-        max_inline(diag.fold(zero, |acc, value| acc + value), zero)
+    fn perimeter_value(&self) -> P::ComposedScalar {
+        let zero = P::ComposedScalar::zero();
+        max_inline(
+            self.upper
+                .sub(&self.lower)
+                .fold(zero, |acc, value| acc + value.into()),
+            zero,
+        )
     }
 
     fn sort_envelopes<T: RTreeObject<Envelope = Self>>(axis: usize, envelopes: &mut [T]) {

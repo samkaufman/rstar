@@ -33,7 +33,7 @@ impl<T: PointDistance> PointDistance for CachedEnvelope<T> {
     fn distance_2(
         &self,
         point: &<Self::Envelope as Envelope>::Point,
-    ) -> <<Self::Envelope as Envelope>::Point as Point>::Scalar {
+    ) -> <<Self::Envelope as Envelope>::Point as Point>::ComposedScalar {
         self.inner.distance_2(point)
     }
 
@@ -44,8 +44,8 @@ impl<T: PointDistance> PointDistance for CachedEnvelope<T> {
     fn distance_2_if_less_or_equal(
         &self,
         point: &<Self::Envelope as Envelope>::Point,
-        max_distance_2: <<Self::Envelope as Envelope>::Point as Point>::Scalar,
-    ) -> Option<<<Self::Envelope as Envelope>::Point as Point>::Scalar> {
+        max_distance_2: <<Self::Envelope as Envelope>::Point as Point>::ComposedScalar,
+    ) -> Option<<<Self::Envelope as Envelope>::Point as Point>::ComposedScalar> {
         self.inner
             .distance_2_if_less_or_equal(point, max_distance_2)
     }

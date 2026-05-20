@@ -174,7 +174,7 @@ where
     T: RTreeObject + PointDistance,
 {
     circle_origin: <T::Envelope as Envelope>::Point,
-    squared_max_distance: <<T::Envelope as Envelope>::Point as Point>::Scalar,
+    squared_max_distance: <<T::Envelope as Envelope>::Point as Point>::ComposedScalar,
 }
 
 impl<T> SelectWithinDistanceFunction<T>
@@ -183,7 +183,7 @@ where
 {
     pub fn new(
         circle_origin: <T::Envelope as Envelope>::Point,
-        squared_max_distance: <<T::Envelope as Envelope>::Point as Point>::Scalar,
+        squared_max_distance: <<T::Envelope as Envelope>::Point as Point>::ComposedScalar,
     ) -> Self {
         SelectWithinDistanceFunction {
             circle_origin,

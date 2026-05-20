@@ -1,3 +1,4 @@
+use core::convert::TryInto;
 use core::fmt::Debug;
 use num_traits::{Bounded, Num, Signed, Zero};
 
@@ -126,6 +127,7 @@ impl<S> RTreeNum for S where S: Bounded + Num + Clone + Copy + Signed + PartialO
 /// impl Point for IntegerPoint
 /// {
 ///   type Scalar = i32;
+///   type ComposedScalar = i32;
 ///   const DIMENSIONS: usize = 2;
 ///
 ///   fn generate(mut generator: impl FnMut(usize) -> Self::Scalar) -> Self
@@ -156,8 +158,11 @@ impl<S> RTreeNum for S where S: Bounded + Num + Clone + Copy + Signed + PartialO
 /// }
 /// ```
 pub trait Point: Clone + PartialEq + Debug {
-    /// The number type used by this point type.
-    type Scalar: RTreeNum;
+    /// The number type of this point's coordinates (each dimension).
+    type Scalar: RTreeNum + Into<Self::ComposedScalar>;
+
+    /// A higher-precision number type used for most arithmetic.
+    type ComposedScalar: RTreeNum + TryInto<Self::Scalar>;
 
     /// The number of dimensions of this point type.
     const DIMENSIONS: usize;
@@ -206,9 +211,9 @@ pub trait PointExt: Point {
     }
 
     /// Returns the dot product of `self` and `rhs`.
-    fn dot(&self, rhs: &Self) -> Self::Scalar {
+    fn dot(&self, rhs: &Self) -> Self::ComposedScalar {
         self.component_wise(rhs, |l, r| l * r)
-            .fold(Zero::zero(), |acc, val| acc + val)
+            .fold(Zero::zero(), |acc, val| acc + val.into())
     }
 
     /// Folds (aka reduces or injects) the Point component wise using `f` and returns the result.
@@ -238,8 +243,11 @@ pub trait PointExt: Point {
     }
 
     /// Returns the squared length of this Point as if it was a vector.
-    fn length_2(&self) -> Self::Scalar {
-        self.fold(Zero::zero(), |acc, cur| cur * cur + acc)
+    fn length_2(&self) -> Self::ComposedScalar {
+        self.fold(Zero::zero(), |acc, cur| {
+            let cur_promoted: Self::ComposedScalar = cur.into();
+            cur_promoted * cur_promoted + acc
+        })
     }
 
     /// Substracts `other` from `self` component wise.
@@ -263,7 +271,7 @@ pub trait PointExt: Point {
     }
 
     /// Returns the squared distance between `self` and `other`.
-    fn distance_2(&self, other: &Self) -> Self::Scalar {
+    fn distance_2(&self, other: &Self) -> Self::ComposedScalar {
         self.sub(other).length_2()
     }
 }
@@ -297,6 +305,7 @@ where
     S: RTreeNum,
 {
     type Scalar = S;
+    type ComposedScalar = S;
 
     const DIMENSIONS: usize = N;
 
@@ -341,6 +350,7 @@ macro_rules! impl_point_for_tuple {
             S: RTreeNum
         {
             type Scalar = S;
+            type ComposedScalar = S;
 
             const DIMENSIONS: usize = count_exprs!($($index),*);
 

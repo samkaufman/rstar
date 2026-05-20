@@ -62,7 +62,7 @@ impl<T, P> PointDistance for PointWithData<T, P>
 where
     P: Point,
 {
-    fn distance_2(&self, point: &P) -> <P as Point>::Scalar {
+    fn distance_2(&self, point: &P) -> <P as Point>::ComposedScalar {
         self.point.distance_2(point)
     }
 

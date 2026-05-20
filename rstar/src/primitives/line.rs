@@ -3,6 +3,7 @@ use crate::envelope::Envelope;
 use crate::object::PointDistance;
 use crate::object::RTreeObject;
 use crate::point::{Point, PointExt};
+use core::convert::TryInto;
 use num_traits::{One, Zero};
 
 /// A line defined by a start and and end point.
@@ -68,11 +69,11 @@ where
     /// let line = Line::new([3, 3], [7, 6]);
     /// assert_eq!(line.length_2(), 25);
     /// ```
-    pub fn length_2(&self) -> P::Scalar {
+    pub fn length_2(&self) -> P::ComposedScalar {
         self.from.sub(&self.to).length_2()
     }
 
-    fn project_point(&self, query_point: &P) -> P::Scalar {
+    fn project_point(&self, query_point: &P) -> P::ComposedScalar {
         let (ref p1, ref p2) = (self.from.clone(), self.to.clone());
         let dir = p2.sub(p1);
         query_point.sub(p1).dot(&dir) / dir.length_2()
@@ -92,7 +93,10 @@ where
     pub fn nearest_point(&self, query_point: &P) -> P {
         let (p1, p2) = (self.from.clone(), self.to.clone());
         let dir = p2.sub(&p1);
-        let s = self.project_point(query_point);
+        // TODO: Use higher precision and lower later
+        let Ok(s): Result<P::Scalar, _> = self.project_point(query_point).try_into() else {
+            panic!("projected point does not fit in coordinate Scalar type");
+        };
         if P::Scalar::zero() < s && s < One::one() {
             p1.add(&dir.mul(s))
         } else if s <= P::Scalar::zero() {
@@ -110,7 +114,7 @@ where
     fn distance_2(
         &self,
         point: &<Self::Envelope as Envelope>::Point,
-    ) -> <<Self::Envelope as Envelope>::Point as Point>::Scalar {
+    ) -> <<Self::Envelope as Envelope>::Point as Point>::ComposedScalar {
         self.nearest_point(point).sub(point).length_2()
     }
 }

@@ -848,7 +848,7 @@ where
     pub fn locate_within_distance(
         &self,
         query_point: <T::Envelope as Envelope>::Point,
-        max_squared_radius: <<T::Envelope as Envelope>::Point as Point>::Scalar,
+        max_squared_radius: <<T::Envelope as Envelope>::Point as Point>::ComposedScalar,
     ) -> LocateWithinDistanceIterator<T> {
         let selection_function = SelectWithinDistanceFunction::new(query_point, max_squared_radius);
         LocateWithinDistanceIterator::new(self.root(), selection_function)
@@ -861,7 +861,7 @@ where
     pub fn drain_within_distance(
         &mut self,
         query_point: <T::Envelope as Envelope>::Point,
-        max_squared_radius: <<T::Envelope as Envelope>::Point as Point>::Scalar,
+        max_squared_radius: <<T::Envelope as Envelope>::Point as Point>::ComposedScalar,
     ) -> DrainIterator<T, SelectWithinDistanceFunction<T>, Params> {
         let selection_function = SelectWithinDistanceFunction::new(query_point, max_squared_radius);
         self.drain_with_selection_function(selection_function)

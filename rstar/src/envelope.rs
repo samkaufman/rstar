@@ -28,10 +28,10 @@ pub trait Envelope: Clone + PartialEq + ::core::fmt::Debug {
     /// of zero area (the two envelopes only touching each other).
     fn intersects(&self, other: &Self) -> bool;
     /// Returns the area of the intersection of `self` and another envelope.
-    fn intersection_area(&self, other: &Self) -> <Self::Point as Point>::Scalar;
+    fn intersection_area(&self, other: &Self) -> <Self::Point as Point>::ComposedScalar;
 
     /// Returns this envelope's area. Must be at least 0.
-    fn area(&self) -> <Self::Point as Point>::Scalar;
+    fn area(&self) -> <Self::Point as Point>::ComposedScalar;
 
     /// Returns the squared distance between the envelope's border and a point.
     ///
@@ -40,7 +40,7 @@ pub trait Envelope: Clone + PartialEq + ::core::fmt::Debug {
     ///   fulfilling the [usual axioms](https://en.wikipedia.org/wiki/Metric_space)
     ///   can be used when implementing this method
     /// - Implementers **must** ensure that the distance metric used matches that of [crate::PointDistance::distance_2]
-    fn distance_2(&self, point: &Self::Point) -> <Self::Point as Point>::Scalar;
+    fn distance_2(&self, point: &Self::Point) -> <Self::Point as Point>::ComposedScalar;
 
     /// Returns the squared min-max distance, a concept that helps to find nearest neighbors efficiently.
     ///
@@ -49,13 +49,13 @@ pub trait Envelope: Clone + PartialEq + ::core::fmt::Debug {
     ///
     /// # References
     /// [Roussopoulos, Nick, Stephen Kelley, and Frédéric Vincent. "Nearest neighbor queries." ACM sigmod record. Vol. 24. No. 2. ACM, 1995.](https://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.133.2288)
-    fn min_max_dist_2(&self, point: &Self::Point) -> <Self::Point as Point>::Scalar;
+    fn min_max_dist_2(&self, point: &Self::Point) -> <Self::Point as Point>::ComposedScalar;
 
     /// Returns the envelope's center point.
     fn center(&self) -> Self::Point;
 
     /// Returns a value proportional to the envelope's perimeter.
-    fn perimeter_value(&self) -> <Self::Point as Point>::Scalar;
+    fn perimeter_value(&self) -> <Self::Point as Point>::ComposedScalar;
 
     /// Sorts a given set of objects with envelopes along one of their axes.
     fn sort_envelopes<T: RTreeObject<Envelope = Self>>(axis: usize, envelopes: &mut [T]);

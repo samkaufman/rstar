@@ -63,6 +63,7 @@ impl<T: RTreeNum> Point for mint::Point2<T> {
 
 impl<T: RTreeNum> Point for mint::Point3<T> {
     type Scalar = T;
+    type ComposedScalar = T;
 
     const DIMENSIONS: usize = 3;
 

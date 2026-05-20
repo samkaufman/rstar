@@ -14,7 +14,7 @@ where
     T: PointDistance + 'a,
 {
     node: &'a RTreeNode<T>,
-    distance: <<T::Envelope as Envelope>::Point as Point>::Scalar,
+    distance: <<T::Envelope as Envelope>::Point as Point>::ComposedScalar,
 }
 
 impl<'a, T> PartialEq for RTreeNodeDistanceWrapper<'a, T>
@@ -83,7 +83,10 @@ impl<'a, T> Iterator for NearestNeighborDistance2Iterator<'a, T>
 where
     T: PointDistance,
 {
-    type Item = (&'a T, <<T::Envelope as Envelope>::Point as Point>::Scalar);
+    type Item = (
+        &'a T,
+        <<T::Envelope as Envelope>::Point as Point>::ComposedScalar,
+    );
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(current) = self.nodes.pop() {
@@ -226,7 +229,7 @@ where
         nodes: &mut SmallHeap<RTreeNodeDistanceWrapper<'a, T>>,
         node: &'a ParentNode<T>,
         query_point: <T::Envelope as Envelope>::Point,
-        min_max_distance: &mut <<T::Envelope as Envelope>::Point as Point>::Scalar,
+        min_max_distance: &mut <<T::Envelope as Envelope>::Point as Point>::ComposedScalar,
     ) where
         T: PointDistance + 'a,
     {
@@ -258,7 +261,7 @@ where
     }
 
     // Calculate smallest minmax-distance
-    let mut smallest_min_max: <<T::Envelope as Envelope>::Point as Point>::Scalar =
+    let mut smallest_min_max: <<T::Envelope as Envelope>::Point as Point>::ComposedScalar =
         Bounded::max_value();
     let mut nodes = SmallHeap::new();
     extend_heap(&mut nodes, node, query_point.clone(), &mut smallest_min_max);
