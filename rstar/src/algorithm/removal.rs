@@ -12,6 +12,179 @@ use alloc::{vec, vec::Vec};
 #[allow(unused_imports)] // Import is required when building without std
 use num_traits::Float;
 
+/// Traversal control returned after visiting a leaf during
+/// [`RTree::drain_with_backtracking_visitor`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VisitLeafControl {
+    /// Leave this leaf in the tree and continue traversal.
+    Keep,
+    /// Remove this leaf from the tree and continue traversal.
+    Remove,
+    /// Remove this leaf and backtrack.
+    RemoveAndRevisit,
+    /// Leave this leaf in the tree and stop traversal.
+    Stop,
+}
+
+/// Visitor used by [RTree::drain_with_backtracking_visitor].
+pub trait BacktrackingDrainVisitor<T>
+where
+    T: RTreeObject,
+{
+    /// Returns `true` if traversal should descend into a parent node.
+    ///
+    /// This may be called more than once for the same parent, including after
+    /// `VisitLeafControl::RemoveAndRevisit` asks traversal to backtrack.
+    fn should_unpack_parent(&self, envelope: &T::Envelope) -> bool;
+
+    /// Visits a leaf and decides what traversal should do with it.
+    fn visit_leaf(&mut self, leaf: &T) -> VisitLeafControl;
+
+    /// Returns `true` if an already-processed subtree child should be revisited after a leaf
+    /// returned `VisitLeafControl::RemoveAndRevisit`.
+    ///
+    /// The default delegates to [`BacktrackingDrainVisitor::should_unpack_parent`].
+    fn should_revisit_parent(&self, envelope: &T::Envelope) -> bool {
+        self.should_unpack_parent(envelope)
+    }
+
+    /// Returns `true` if an already-processed leaf child should be revisited after a leaf returned
+    /// [`VisitLeafControl::RemoveAndRevisit`].
+    ///
+    /// The default returns `true`.
+    fn should_revisit_leaf(&self, _leaf: &T) -> bool {
+        true
+    }
+}
+
+#[derive(Default)]
+struct VisitSelectedLeavesOutcome {
+    /// Number of leaves removed from this subtree.
+    removed: usize,
+    /// Whether a descendant returned `VisitLeafControl::RemoveAndRevisit`, so callers must check
+    /// already-processed siblings against the visitor's revisit predicates.
+    revisit_ancestors: bool,
+    /// Whether traversal should stop immediately and unwind without visiting additional siblings.
+    stopped: bool,
+}
+
+fn first_revisitable_child_index<T, V>(
+    visitor: &V,
+    node: &ParentNode<T>,
+    processed_end: usize,
+) -> Option<usize>
+where
+    T: RTreeObject,
+    V: BacktrackingDrainVisitor<T>,
+{
+    node.children
+        .iter()
+        .take(processed_end)
+        .position(|child| match child {
+            RTreeNode::Leaf(leaf) => visitor.should_revisit_leaf(leaf),
+            RTreeNode::Parent(parent) => visitor.should_revisit_parent(&parent.envelope),
+        })
+}
+
+fn visit_selected_leaves_in_place<T, V>(
+    node: &mut ParentNode<T>,
+    visitor: &mut V,
+) -> VisitSelectedLeavesOutcome
+where
+    T: RTreeObject,
+    V: BacktrackingDrainVisitor<T>,
+{
+    let mut outcome = VisitSelectedLeavesOutcome::default();
+    let mut idx = 0;
+
+    while idx < node.children.len() {
+        match &mut node.children[idx] {
+            RTreeNode::Parent(parent) => {
+                if !visitor.should_unpack_parent(&parent.envelope) {
+                    idx += 1;
+                    continue;
+                }
+
+                let child_outcome = visit_selected_leaves_in_place(parent, visitor);
+                outcome.removed += child_outcome.removed;
+                outcome.revisit_ancestors |= child_outcome.revisit_ancestors;
+
+                if child_outcome.stopped {
+                    if outcome.removed != 0 {
+                        node.envelope = crate::node::envelope_for_children(&node.children);
+                    }
+                    outcome.stopped = true;
+                    return outcome;
+                }
+
+                let child_is_empty = parent.children.is_empty();
+                if child_is_empty {
+                    node.children.swap_remove(idx);
+                }
+
+                if child_outcome.revisit_ancestors {
+                    if let Some(revisit_idx) = first_revisitable_child_index(visitor, node, idx) {
+                        idx = revisit_idx;
+                        continue;
+                    }
+                }
+
+                if !child_is_empty {
+                    idx += 1;
+                }
+            }
+            RTreeNode::Leaf(leaf) => match visitor.visit_leaf(leaf) {
+                VisitLeafControl::Keep => {
+                    idx += 1;
+                }
+                VisitLeafControl::Remove => {
+                    node.children.swap_remove(idx);
+                    outcome.removed += 1;
+                }
+                VisitLeafControl::RemoveAndRevisit => {
+                    node.children.swap_remove(idx);
+                    outcome.removed += 1;
+                    outcome.revisit_ancestors = true;
+
+                    if let Some(revisit_idx) = first_revisitable_child_index(visitor, node, idx) {
+                        idx = revisit_idx;
+                    }
+                }
+                VisitLeafControl::Stop => {
+                    if outcome.removed != 0 {
+                        node.envelope = crate::node::envelope_for_children(&node.children);
+                    }
+                    outcome.stopped = true;
+                    return outcome;
+                }
+            },
+        }
+    }
+
+    if outcome.removed != 0 {
+        node.envelope = crate::node::envelope_for_children(&node.children);
+    }
+    outcome
+}
+
+pub(crate) fn drain_with_backtracking_visitor<T, Params, V>(
+    rtree: &mut RTree<T, Params>,
+    visitor: &mut V,
+) -> usize
+where
+    T: RTreeObject,
+    Params: RTreeParams,
+    V: BacktrackingDrainVisitor<T>,
+{
+    if rtree.root().children().is_empty() || !visitor.should_unpack_parent(&rtree.root().envelope) {
+        return 0;
+    }
+
+    let outcome = visit_selected_leaves_in_place(rtree.root_mut(), visitor);
+    *rtree.size_mut() -= outcome.removed;
+    outcome.removed
+}
+
 /// Iterator returned by `impl IntoIter for RTree`.
 ///
 /// Consumes the whole tree and yields all leaf objects.
@@ -247,8 +420,10 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::cell::Cell;
     use std::mem::forget;
 
+    use crate::algorithm::rstar::RStarInsertionStrategy;
     use crate::algorithm::selection_functions::{SelectAllFunc, SelectInEnvelopeFuncIntersecting};
     use crate::point::PointExt;
     use crate::primitives::Line;
@@ -377,6 +552,83 @@ mod test {
         let sel_count = tree.locate_with_selection_function(sel).count();
         assert_eq!(sel_count, 0);
         assert_eq!(tree.size(), 1000 - 80 - 326);
+    }
+
+    #[test]
+    fn test_drain_visitor_stop_keeps_current_leaf_and_stops() {
+        struct StopAtFirstLeaf {
+            visited: bool,
+        }
+
+        impl BacktrackingDrainVisitor<[i32; 2]> for StopAtFirstLeaf {
+            fn should_unpack_parent(&self, _: &AABB<[i32; 2]>) -> bool {
+                true
+            }
+
+            fn visit_leaf(&mut self, _: &[i32; 2]) -> VisitLeafControl {
+                assert!(!self.visited);
+                self.visited = true;
+                VisitLeafControl::Stop
+            }
+        }
+
+        let mut tree = RTree::bulk_load(vec![[0, 0], [1, 0]]);
+        let mut visitor = StopAtFirstLeaf { visited: false };
+        let removed = tree.drain_with_backtracking_visitor(&mut visitor);
+
+        assert!(visitor.visited);
+        assert_eq!(removed, 0);
+        assert_eq!(tree.size(), 2);
+        assert!(tree.contains(&[0, 0]));
+        assert!(tree.contains(&[1, 0]));
+    }
+
+    #[test]
+    fn test_drain_visitor_remove_and_revisit_respects_revisit_predicate() {
+        struct DeclineRevisitOfFirstSeen {
+            first_seen: Cell<Option<[i32; 2]>>,
+            select_first_seen: bool,
+        }
+
+        impl BacktrackingDrainVisitor<[i32; 2]> for DeclineRevisitOfFirstSeen {
+            fn should_unpack_parent(&self, _: &AABB<[i32; 2]>) -> bool {
+                true
+            }
+
+            fn visit_leaf(&mut self, point: &[i32; 2]) -> VisitLeafControl {
+                if self.select_first_seen {
+                    if self.first_seen.get() == Some(*point) {
+                        return VisitLeafControl::Remove;
+                    }
+                    return VisitLeafControl::Keep;
+                }
+
+                if self.first_seen.get().is_none() {
+                    self.first_seen.set(Some(*point));
+                    return VisitLeafControl::Keep;
+                }
+
+                assert_ne!(self.first_seen.get(), Some(*point));
+                self.select_first_seen = true;
+                VisitLeafControl::RemoveAndRevisit
+            }
+
+            fn should_revisit_leaf(&self, _: &[i32; 2]) -> bool {
+                false
+            }
+        }
+
+        let mut tree = RTree::bulk_load(vec![[0, 0], [1, 0]]);
+        let mut visitor = DeclineRevisitOfFirstSeen {
+            first_seen: Cell::new(None),
+            select_first_seen: false,
+        };
+        let removed = tree.drain_with_backtracking_visitor(&mut visitor);
+        let first_seen = visitor.first_seen.get().unwrap();
+
+        assert_eq!(removed, 1);
+        assert_eq!(tree.size(), 1);
+        assert!(tree.contains(&first_seen));
     }
 
     #[test]

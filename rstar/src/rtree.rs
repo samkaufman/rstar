@@ -582,6 +582,38 @@ where
         removal::DrainIterator::new(self, function)
     }
 
+    /// Visits leaves and optionally drains them using a visitor-controlled traversal.
+    ///
+    /// [BacktrackingDrainVisitor::should_unpack_parent] decides whether traversal descends into a
+    /// subtree child. For every leaf reached by that traversal,
+    /// [BacktrackingDrainVisitor::visit_leaf] returns a [VisitLeafControl] describing whether the
+    /// leaf is kept, removed, removed with backtracking, or kept while stopping traversal.
+    ///
+    /// Backtracking is limited to the current recursive traversal path. When
+    /// [BacktrackingDrainVisitor::visit_leaf] returns `VisitLeafControl::RemoveAndRevisit`,
+    /// traversal removes that leaf and scans the already-visited children of the current parent
+    /// node. Children in that range are tested with
+    /// [BacktrackingDrainVisitor::should_revisit_leaf] or
+    /// [BacktrackingDrainVisitor::should_revisit_parent].
+    ///
+    /// If a child in that range should be revisited, traversal resumes at the first matching child
+    /// in that range. After the current subtree finishes, the request is propagated to the caller,
+    /// which applies the same scan to the caller's already-visited children. This continues up the
+    /// active traversal path, giving each ancestor a chance to revisit its own already-visited
+    /// children. Children at or after the current traversal index are not part of the backtracking
+    /// scan; they remain on the normal forward traversal path.
+    ///
+    /// A revisited parent is still subject to [BacktrackingDrainVisitor::should_unpack_parent]
+    /// before traversal descends into it.
+    ///
+    /// Returns the number of elements removed from the tree.
+    pub fn drain_with_backtracking_visitor<V>(&mut self, visitor: &mut V) -> usize
+    where
+        V: BacktrackingDrainVisitor<T>,
+    {
+        removal::drain_with_backtracking_visitor(self, visitor)
+    }
+
     /// Drains elements intersecting the `envelope`. Similar to
     /// `locate_in_envelope_intersecting`, except the elements are removed
     /// and returned via an iterator.
